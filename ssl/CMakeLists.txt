@@ -72,6 +72,13 @@ target_include_directories(ssl_obj
 		../include
 		${CMAKE_BINARY_DIR}/include)
 
+if(MSVC)
+	# "C4702" - unreachable code
+	set_source_files_properties(d1_pkt.c s3_cbc.c PROPERTIES
+		COMPILE_OPTIONS /wd4702
+	)
+endif()
+
 add_library(bs_obj OBJECT ${BS_SRC})
 target_include_directories(bs_obj
 	PRIVATE
@@ -110,10 +117,12 @@ elseif(HOST_ARM)
 	target_include_directories(ssl_obj PRIVATE ../crypto/arch/arm/)
 elseif(HOST_I386)
 	target_include_directories(ssl_obj PRIVATE ../crypto/arch/i386/)
+elseif(HOST_LOONGARCH64)
+	target_include_directories(ssl_obj PRIVATE ../crypto/arch/loongarch64)
 elseif(HOST_MIPS64)
 	target_include_directories(ssl_obj PRIVATE ../crypto/arch/mips64)
 elseif(HOST_MIPS)
-	# XXX - can this go away? the directory doesn't exist...
+	target_include_directories(ssl_obj PRIVATE ../crypto/arch/mips)
 elseif(HOST_POWERPC)
 	target_include_directories(ssl_obj PRIVATE ../crypto/arch/powerpc)
 elseif(HOST_POWERPC64)
@@ -157,4 +166,3 @@ if(BUILD_SHARED_LIBS)
 	add_library(ssl-static STATIC $<TARGET_OBJECTS:ssl_obj>)
 	target_link_libraries(ssl-static crypto-static ${PLATFORM_LIBS})
 endif()
-

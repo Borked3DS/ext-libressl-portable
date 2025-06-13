@@ -32,20 +32,45 @@ string(STRIP ${TLS_VERSION} TLS_VERSION)
 string(REPLACE ":" "." TLS_VERSION ${TLS_VERSION})
 string(REGEX REPLACE "\\..*" "" TLS_MAJOR_VERSION ${TLS_VERSION})
 
-option(ENABLE_ASM "Enable assembly" ON)
+option(LIBRESSL_SKIP_INSTALL "Skip installation" ON)
+option(LIBRESSL_APPS "Build apps" OFF)
+option(LIBRESSL_TESTS "Build tests" OFF)
+option(ENABLE_ASM "Enable assembly" OFF)
+option(ENABLE_EXTRATESTS "Enable extra tests that may be unreliable on some platforms" OFF)
 option(ENABLE_NC "Enable installing TLS-enabled nc(1)" OFF)
 set(OPENSSLDIR ${OPENSSLDIR} CACHE PATH "Set the default openssl directory" FORCE)
+set(LIBRESSL_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/LibreSSL" CACHE STRING "Installation directory for the CMake targets")
 
 option(USE_STATIC_MSVC_RUNTIMES "Use /MT instead of /MD in MSVC" OFF)
 if(USE_STATIC_MSVC_RUNTIMES)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-set(BUILD_NC true)
+if(NOT LIBRESSL_SKIP_INSTALL)
+	set( ENABLE_LIBRESSL_INSTALL ON )
+endif(NOT LIBRESSL_SKIP_INSTALL)
 
-if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
-	add_definitions(-fno-common)
+# Set a default build type if none was specified
+set(default_build_type "Release")
+
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  message(STATUS "Setting build type to '${default_build_type}' as none was specified.")
+  set(CMAKE_BUILD_TYPE "${default_build_type}" CACHE
+      STRING "Choose the type of build." FORCE)
+  # Set the possible values of build type for cmake-gui
+  set_property(CACHE CMAKE_BUILD_TYPE PROPERTY
+	  STRINGS "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
 endif()
+
+# Do not disable assertions based on CMAKE_BUILD_TYPE
+foreach(_build_type "Release" "MinSizeRel" "RelWithDebInfo")
+	foreach(_lang C CXX)
+		string(TOUPPER "CMAKE_${_lang}_FLAGS_${_build_type}" _var)
+		string(REGEX REPLACE "(^| )[/-]D *NDEBUG($| )" " " ${_var} "${${_var}}")
+	endforeach()
+endforeach()
+
+set(BUILD_NC true)
 
 if(CMAKE_SYSTEM_NAME MATCHES "OpenBSD")
 	add_definitions(-DHAVE_ATTRIBUTE__BOUNDED__)
@@ -57,6 +82,10 @@ if(CMAKE_SYSTEM_NAME MATCHES "Linux")
 	add_definitions(-D_BSD_SOURCE)
 	add_definitions(-D_POSIX_SOURCE)
 	add_definitions(-D_GNU_SOURCE)
+	set(PLATFORM_LIBS ${PLATFORM_LIBS} pthread)
+endif()
+
+if(CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
 	set(PLATFORM_LIBS ${PLATFORM_LIBS} pthread)
 endif()
 
@@ -98,7 +127,7 @@ add_definitions(-D__END_HIDDEN_DECLS=)
 set(CMAKE_POSITION_INDEPENDENT_CODE true)
 
 if (CMAKE_COMPILER_IS_GNUCC OR CMAKE_C_COMPILER_ID MATCHES "Clang")
-	add_definitions(-Wno-pointer-sign)
+	add_compile_options(-Wno-pointer-sign)
 endif()
 
 if(WIN32)
@@ -107,7 +136,6 @@ if(WIN32)
 	add_definitions(-D_REENTRANT -D_POSIX_THREAD_SAFE_FUNCTIONS)
 	add_definitions(-DNO_SYSLOG)
 	add_definitions(-DWIN32_LEAN_AND_MEAN)
-	add_definitions(-DLIBRESSL_DISABLE_OVERRIDE_WINCRYPT_DEFINES_WARNING)
 	if(NOT CMAKE_SYSTEM_NAME MATCHES "WindowsStore")
 		add_definitions(-D_WIN32_WINNT=0x0600)
 	endif()
@@ -130,17 +158,21 @@ if(MSVC)
 		set(MSVC_DISABLED_WARNINGS_LIST
 			"C4018" # 'expression' : signed/unsigned mismatch
 			"C4057" # 'operator' : 'identifier1' indirection to
-		        	# slightly different base types from 'identifier2'
+			        # slightly different base types from 'identifier2'
 			"C4100" # 'identifier' : unreferenced formal parameter
 			"C4127" # conditional expression is constant
+			"C4132" # 'object' : const object should be initialized
 			"C4146" # unary minus operator applied to unsigned type,
 			        # result still unsigned
+			"C4206" # nonstandard extension used : translation unit is empty
 			"C4244" # 'argument' : conversion from 'type1' to 'type2',
 			        # possible loss of data
 			"C4245" # 'conversion' : conversion from 'type1' to 'type2',
 			        # signed/unsigned mismatch
 			"C4267" # 'var' : conversion from 'size_t' to 'type',
 			        # possible loss of data
+			"C4295" # 'array' : array is too small to include a terminating
+			        # null character
 			"C4389" # 'operator' : signed/unsigned mismatch
 			"C4706" # assignment within conditional expression
 			"C4996" # The POSIX name for this item is deprecated.
@@ -178,6 +210,16 @@ if(HAVE_ASPRINTF)
 	add_definitions(-DHAVE_ASPRINTF)
 endif()
 
+check_symbol_exists(getdelim "stdio.h" HAVE_GETDELIM)
+if(HAVE_GETDELIM)
+	add_definitions(-DHAVE_GETDELIM)
+endif()
+
+check_symbol_exists(getline "stdio.h" HAVE_GETLINE)
+if(HAVE_GETLINE)
+	add_definitions(-DHAVE_GETLINE)
+endif()
+
 check_symbol_exists(getopt "unistd.h" HAVE_GETOPT)
 if(HAVE_GETOPT)
 	add_definitions(-DHAVE_GETOPT)
@@ -196,15 +238,15 @@ endif()
 
 # Emscripten's strlcat and strlcpy triggers ASAN errors
 if(NOT EMSCRIPTEN)
-        check_symbol_exists(strlcat "string.h" HAVE_STRLCAT)
-        if(HAVE_STRLCAT)
-                add_definitions(-DHAVE_STRLCAT)
-        endif()
+	check_symbol_exists(strlcat "string.h" HAVE_STRLCAT)
+	if(HAVE_STRLCAT)
+		add_definitions(-DHAVE_STRLCAT)
+	endif()
 
-        check_symbol_exists(strlcpy "string.h" HAVE_STRLCPY)
-        if(HAVE_STRLCPY)
-                add_definitions(-DHAVE_STRLCPY)
-        endif()
+	check_symbol_exists(strlcpy "string.h" HAVE_STRLCPY)
+	if(HAVE_STRLCPY)
+		add_definitions(-DHAVE_STRLCPY)
+	endif()
 endif()
 
 check_symbol_exists(strndup "string.h" HAVE_STRNDUP)
@@ -303,15 +345,14 @@ endif()
 if (NOT IOS)
         check_include_files(endian.h HAVE_ENDIAN_H)
         if(HAVE_ENDIAN_H)
-               add_definitions(-DHAVE_ENDIAN_H)
+        	add_definitions(-DHAVE_ENDIAN_H)
         endif()
 
         check_include_files(machine/endian.h HAVE_MACHINE_ENDIAN_H)
         if(HAVE_MACHINE_ENDIAN_H)
-                add_definitions(-DHAVE_MACHINE_ENDIAN_H)
+        	add_definitions(-DHAVE_MACHINE_ENDIAN_H)
         endif()
 endif()
-
 check_include_files(err.h HAVE_ERR_H)
 if(HAVE_ERR_H)
 	add_definitions(-DHAVE_ERR_H)
@@ -345,6 +386,8 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|amd64|AMD64)")
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "(i[3-6]86|[xX]86)")
 	set(ENABLE_ASM false)
 	set(HOST_I386 true)
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "loongarch64")
+	set(HOST_LOONGARCH64 true)
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "mips64")
 	set(HOST_MIPS64 true)
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "mips")
@@ -406,10 +449,41 @@ endif()
 set(OPENSSL_LIBS ssl crypto ${PLATFORM_LIBS})
 set(LIBTLS_LIBS tls ${PLATFORM_LIBS})
 
+# libraries for regression test
+if(BUILD_SHARED_LIBS)
+	set(OPENSSL_TEST_LIBS ssl-static crypto-static ${PLATFORM_LIBS} compat_obj)
+	set(LIBTLS_TEST_LIBS tls-static ${OPENSSL_TEST_LIBS} tls_compat_obj)
+else()
+	set(OPENSSL_TEST_LIBS ssl crypto ${PLATFORM_LIBS} compat_obj)
+	set(LIBTLS_TEST_LIBS tls ${PLATFORM_LIBS} compat_obj tls_compat_obj)
+endif()
+
+if(OPENSSLDIR STREQUAL "")
+	if(WIN32)
+		set(OPENSSLDIR "C:/Windows/libressl/ssl")
+	else()
+		set(OPENSSLDIR "${CMAKE_INSTALL_SYSCONFDIR}/ssl")
+	endif()
+
+	set(CONF_DIR "${CMAKE_INSTALL_SYSCONFDIR}/ssl")
+else()
+	set(CONF_DIR "${OPENSSLDIR}")
+endif()
+
 add_subdirectory(include)
 add_subdirectory(crypto)
 add_subdirectory(ssl)
+if(LIBRESSL_APPS)
+	add_subdirectory(apps)
+endif()
 add_subdirectory(tls)
+if(NOT MSVC)
+	add_subdirectory(man)
+endif()
+# Tests require the openssl executable and are unavailable when building shared libraries
+if(LIBRESSL_APPS AND LIBRESSL_TESTS)
+	add_subdirectory(tests)
+endif()
 
 if (BUILD_APPLE_XCFRAMEWORK)
 	# Create the super library from object libraries
@@ -418,5 +492,72 @@ if (BUILD_APPLE_XCFRAMEWORK)
 	set_target_properties(LibreSSL_xcframework PROPERTIES
 			OUTPUT_NAME ressl)
 
+	if(ENABLE_LIBRESSL_INSTALL)
+		install(TARGETS LibreSSL_xcframework
+				LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
+	endif(ENABLE_LIBRESSL_INSTALL)
 endif(BUILD_APPLE_XCFRAMEWORK)
 
+file(STRINGS "VERSION" VERSION LIMIT_COUNT 1)
+include(CMakePackageConfigHelpers)
+write_basic_package_version_file(
+	"LibreSSLConfigVersion.cmake"
+	VERSION "${VERSION}"
+	COMPATIBILITY SameMajorVersion
+)
+
+set(INCLUDE_DIRECTORY "${CMAKE_BINARY_DIR}/include")
+configure_package_config_file(
+  "${CMAKE_CURRENT_LIST_DIR}/LibreSSLConfig.cmake.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/LibreSSLConfig.cmake"
+	PATH_VARS INCLUDE_DIRECTORY
+  INSTALL_DESTINATION "${CMAKE_CURRENT_BINARY_DIR}"
+	INSTALL_PREFIX "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+if(ENABLE_LIBRESSL_INSTALL)
+	set(INCLUDE_DIRECTORY "${CMAKE_INSTALL_INCLUDEDIR}")
+	configure_package_config_file(
+  	"${CMAKE_CURRENT_LIST_DIR}/LibreSSLConfig.cmake.in"
+  	"${CMAKE_CURRENT_BINARY_DIR}/install-config/LibreSSLConfig.cmake"
+		PATH_VARS INCLUDE_DIRECTORY
+  	INSTALL_DESTINATION "${LIBRESSL_INSTALL_CMAKEDIR}"
+	)
+	install(FILES
+		"${CMAKE_CURRENT_BINARY_DIR}/install-config/LibreSSLConfig.cmake"
+		"${CMAKE_CURRENT_BINARY_DIR}/LibreSSLConfigVersion.cmake"
+		DESTINATION "${LIBRESSL_INSTALL_CMAKEDIR}"
+	)
+
+	if(NOT MSVC)
+		# Create pkgconfig files.
+		set(prefix      ${CMAKE_INSTALL_PREFIX})
+		set(exec_prefix \${prefix})
+		set(libdir      \${exec_prefix}/${CMAKE_INSTALL_LIBDIR})
+		set(includedir  \${prefix}/${CMAKE_INSTALL_INCLUDEDIR})
+		if(PLATFORM_LIBS)
+			string(REGEX REPLACE ";" " -l" PLATFORM_LDADD ";${PLATFORM_LIBS}")
+		endif()
+		file(GLOB       OPENSSL_PKGCONFIGS "*.pc.in")
+		foreach(file ${OPENSSL_PKGCONFIGS})
+			get_filename_component(filename ${file} NAME)
+			string(REPLACE ".in" "" new_file "${filename}")
+			configure_file(${filename} pkgconfig/${new_file} @ONLY)
+		endforeach()
+		install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/pkgconfig
+			DESTINATION ${CMAKE_INSTALL_LIBDIR})
+	endif()
+
+	install(FILES cert.pem openssl.cnf x509v3.cnf DESTINATION ${CONF_DIR})
+	install(DIRECTORY DESTINATION ${CONF_DIR}/certs)
+
+ 	if(NOT TARGET uninstall)
+		configure_file(
+			"${CMAKE_CURRENT_SOURCE_DIR}/cmake_uninstall.cmake.in"
+			"${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake"
+			IMMEDIATE @ONLY)
+
+		add_custom_target(uninstall
+			COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake)
+	endif()
+endif()

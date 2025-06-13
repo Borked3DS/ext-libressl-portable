@@ -72,6 +72,7 @@ OPTION	DOTNAME
 
 
 
+
 ; 9 "crypto/rc4/rc4-masm-x86_64.S.tmp" 2
 .text$	SEGMENT ALIGN(64) 'CODE'
 EXTERN	OPENSSL_ia32cap_P:NEAR
