@@ -742,8 +742,8 @@ tls_config_set_session_fd(struct tls_config *config, int session_fd)
 
 	if (sb.st_uid != getuid()) {
 		tls_config_set_errorx(config, TLS_ERROR_UNKNOWN,
-		    "session file has incorrect owner (uid %u != %u)",
-		    sb.st_uid, getuid());
+		    "session file has incorrect owner (uid %llu != %llu)",
+		    (unsigned long long)sb.st_uid, (unsigned long long)getuid());
 		return (-1);
 	}
 	mugo = sb.st_mode & (S_IRWXU|S_IRWXG|S_IRWXO);

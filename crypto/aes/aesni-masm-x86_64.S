@@ -72,6 +72,7 @@ OPTION	DOTNAME
 
 
 
+
 ; 9 "crypto/aes/aesni-masm-x86_64.S.tmp" 2
 .text$	SEGMENT ALIGN(64) 'CODE'
 PUBLIC	aesni_encrypt

@@ -41,15 +41,15 @@ if(USE_STATIC_MSVC_RUNTIMES)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
+if(CMAKE_SYSTEM_NAME MATCHES "OpenBSD")
+	add_definitions(-DHAVE_ATTRIBUTE__BOUNDED__)
+	add_definitions(-DHAVE_ATTRIBUTE__DEAD__)
+endif()
+
 set(BUILD_NC true)
 
 if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
 	add_definitions(-fno-common)
-endif()
-
-if(CMAKE_SYSTEM_NAME MATCHES "OpenBSD")
-	add_definitions(-DHAVE_ATTRIBUTE__BOUNDED__)
-	add_definitions(-DHAVE_ATTRIBUTE__DEAD__)
 endif()
 
 if(CMAKE_SYSTEM_NAME MATCHES "Linux")
@@ -98,7 +98,7 @@ add_definitions(-D__END_HIDDEN_DECLS=)
 set(CMAKE_POSITION_INDEPENDENT_CODE true)
 
 if (CMAKE_COMPILER_IS_GNUCC OR CMAKE_C_COMPILER_ID MATCHES "Clang")
-	add_definitions(-Wno-pointer-sign)
+	add_compile_options(-Wno-pointer-sign)
 endif()
 
 if(WIN32)
@@ -130,17 +130,21 @@ if(MSVC)
 		set(MSVC_DISABLED_WARNINGS_LIST
 			"C4018" # 'expression' : signed/unsigned mismatch
 			"C4057" # 'operator' : 'identifier1' indirection to
-		        	# slightly different base types from 'identifier2'
+			        # slightly different base types from 'identifier2'
 			"C4100" # 'identifier' : unreferenced formal parameter
 			"C4127" # conditional expression is constant
+			"C4132" # 'object' : const object should be initialized
 			"C4146" # unary minus operator applied to unsigned type,
 			        # result still unsigned
+			"C4206" # nonstandard extension used : translation unit is empty
 			"C4244" # 'argument' : conversion from 'type1' to 'type2',
 			        # possible loss of data
 			"C4245" # 'conversion' : conversion from 'type1' to 'type2',
 			        # signed/unsigned mismatch
 			"C4267" # 'var' : conversion from 'size_t' to 'type',
 			        # possible loss of data
+			"C4295" # 'array' : array is too small to include a terminating
+			        # null character
 			"C4389" # 'operator' : signed/unsigned mismatch
 			"C4706" # assignment within conditional expression
 			"C4996" # The POSIX name for this item is deprecated.
@@ -196,15 +200,15 @@ endif()
 
 # Emscripten's strlcat and strlcpy triggers ASAN errors
 if(NOT EMSCRIPTEN)
-        check_symbol_exists(strlcat "string.h" HAVE_STRLCAT)
-        if(HAVE_STRLCAT)
-                add_definitions(-DHAVE_STRLCAT)
-        endif()
+	check_symbol_exists(strlcat "string.h" HAVE_STRLCAT)
+	if(HAVE_STRLCAT)
+		add_definitions(-DHAVE_STRLCAT)
+	endif()
 
-        check_symbol_exists(strlcpy "string.h" HAVE_STRLCPY)
-        if(HAVE_STRLCPY)
-                add_definitions(-DHAVE_STRLCPY)
-        endif()
+	check_symbol_exists(strlcpy "string.h" HAVE_STRLCPY)
+	if(HAVE_STRLCPY)
+		add_definitions(-DHAVE_STRLCPY)
+	endif()
 endif()
 
 check_symbol_exists(strndup "string.h" HAVE_STRNDUP)
@@ -303,15 +307,14 @@ endif()
 if (NOT IOS)
         check_include_files(endian.h HAVE_ENDIAN_H)
         if(HAVE_ENDIAN_H)
-               add_definitions(-DHAVE_ENDIAN_H)
+        	add_definitions(-DHAVE_ENDIAN_H)
         endif()
 
         check_include_files(machine/endian.h HAVE_MACHINE_ENDIAN_H)
         if(HAVE_MACHINE_ENDIAN_H)
-                add_definitions(-DHAVE_MACHINE_ENDIAN_H)
+        	add_definitions(-DHAVE_MACHINE_ENDIAN_H)
         endif()
 endif()
-
 check_include_files(err.h HAVE_ERR_H)
 if(HAVE_ERR_H)
 	add_definitions(-DHAVE_ERR_H)
@@ -345,6 +348,8 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|amd64|AMD64)")
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "(i[3-6]86|[xX]86)")
 	set(ENABLE_ASM false)
 	set(HOST_I386 true)
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "loongarch64")
+	set(HOST_LOONGARCH64 true)
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "mips64")
 	set(HOST_MIPS64 true)
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "mips")
@@ -419,4 +424,3 @@ if (BUILD_APPLE_XCFRAMEWORK)
 			OUTPUT_NAME ressl)
 
 endif(BUILD_APPLE_XCFRAMEWORK)
-
